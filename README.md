@@ -1,70 +1,101 @@
-# Glue Crawler Cleaner Lambda
+# AWS Glue Table Version Cleanup Lambda
 
-## Overview
+## Description
 
-The Glue Crawler Cleaner Lambda function automates the cleanup of older table versions in AWS Glue, helping to manage storage efficiently and avoid versioning issues.
+This project provides a solution for efficiently managing AWS Glue table versions using an AWS Lambda function. Over time, AWS Glue can accumulate a large number of table versions, which may exceed service quotas and cause issues with data access and crawler operations. This Lambda function addresses this problem by periodically deleting older table versions in bulk, ensuring smooth operation and avoiding crawler failures.
 
-## Situation
+## Problem
 
-AWS Glue accumulates multiple versions of tables over time, leading to increased storage costs and potential management issues. Manual cleanup is inefficient and prone to error.
+AWS Glue creates a new version of a table every time a transformation occurs. If the number of table versions exceeds certain thresholds, it can lead to crawler failures and issues accessing data through Athena or other DBMS/Data Warehouse solutions.
 
-## Task
+### Service Quotas
 
-Develop a solution to automatically remove outdated table versions in AWS Glue to:
-1. Reduce storage costs.
-2. Prevent version management issues.
-3. Automate the cleanup process.
+Here are some relevant service quotas for AWS Glue table versions:
 
-## Action
+| Service Quota                            | Scope               | Default Limit | Adjustable | Description                                               |
+|------------------------------------------|---------------------|---------------|------------|-----------------------------------------------------------|
+| Max concurrent job runs per account      | Each supported Region | 2,000         | Yes        | The maximum number of concurrent job runs in your account. |
+| Max concurrent job runs per job          | Each supported Region | 4,000         | Yes        | The maximum number of concurrent job runs for a job.     |
+| Max table versions per account           | Each supported Region | 1,000,000     | Yes        | The maximum number of table versions in your account.    |
+| Max table versions per table             | Each supported Region | 100,000       | Yes        | The maximum number of table versions per table.         |
+| Max tables per account                   | Each supported Region | 1,000,000     | Yes        | The maximum number of tables in your account.           |
+| Max tables per database                  | Each supported Region | 200,000       | Yes        | The maximum number of tables per database.              |
 
-1. **Deploy Lambda Function**: Implemented an AWS Lambda function that runs on a schedule.
-2. **Fetch Data**: The function retrieves all databases and tables from AWS Glue.
-3. **Process and Clean**: It identifies and deletes older table versions, ensuring it does not exceed API rate limits.
-4. **Batch Processing**: Handles deletions in batches and logs results, including errors.
+For more details, refer to the [AWS Glue Service Quotas documentation](https://docs.aws.amazon.com/glue/latest/dg/limits.html).
 
-## Result
+## Solution
 
-The Lambda function effectively cleans up old table versions, reducing storage costs and preventing clutter in the Glue Data Catalog. It runs on a regular schedule, automating what was previously a manual and error-prone task.
+To resolve the problem of accumulating AWS Glue table versions, the provided Lambda function performs the following tasks:
 
+1. **Fetch Databases and Tables:** The Lambda function iterates over all databases and tables using pagination to handle large datasets.
+2. **Delete Old Versions:** It retrieves all table versions and deletes older versions in batches to manage the number of versions effectively.
+3. **Timeout Handling:** The function checks the remaining execution time and exits 20 seconds before the timeout to ensure smooth operation and avoid abrupt terminations.
+4. **Periodic Execution:** The Lambda function is set up to run periodically via an EventBridge rule to maintain optimal table version counts.
+
+### IAM Permissions
+
+The IAM role used by the Lambda function must have the following permissions:
+
+- `glue:GetDatabases`
+- `glue:GetTables`
+- `glue:GetTableVersions`
+- `glue:BatchDeleteTableVersion`
+
+### Example IAM Policy
+
+Here is an example IAM policy that includes the necessary permissions:
+
+```yaml
+# Example IAM Policy for AWS Glue
+Policies:
+  - PolicyName: GlueTableVersionCleanupPolicy
+    PolicyDocument:
+      Version: '2012-10-17'
+      Statement:
+        - Effect: Allow
+          Action:
+            - glue:GetDatabases
+            - glue:GetTables
+            - glue:GetTableVersions
+            - glue:BatchDeleteTableVersion
+          Resource: '*'
+```
 ## How to Use
 
 ### Method 1: Deploy Using YAML Configuration
 
-1. **Upload Code**: Upload the Lambda function code (`glue_crawler_cleaner.py`) to an S3 bucket.
-2. **Deploy via CloudFormation**: Use the provided YAML configuration (`lambda_function.yaml`) to deploy the Lambda function, IAM role, EventBridge rule, and permissions using AWS CloudFormation.
-   - Note: The YAML file demonstrates the required permissions and configuration but is not strictly necessary for deployment. You can manually create these resources in the AWS Management Console if preferred.
+1. **Create IAM Role**: Use the provided YAML to create an IAM role with the necessary permissions for the Lambda function. This YAML defines the policies required to access and modify AWS Glue resources.
+   
+   **Note**: This YAML is primarily for showing the permissions needed and is not strictly required for deployment.
+
+2. **Deploy Lambda Function**: Use the provided YAML to deploy the Lambda function, including its code, environment variables, and configuration.
+
+3. **Set Up EventBridge Rule**: Create an EventBridge rule to schedule the Lambda function to run periodically (e.g., every 7 days). This ensures the function is executed automatically to clean up old table versions.
 
 ### Method 2: Deploy Using AWS Management Console
 
-1. **Create Lambda Function**:
-   - Go to the AWS Lambda console.
-   - Click "Create function" and choose "Author from scratch."
-   - Enter a function name (e.g., `GlueCrawlerCleanerFunction`).
-   - Choose Python 3.8 as the runtime.
-   - Upload the Lambda function code (`glue_crawler_cleaner.py`) as a .zip file or specify the S3 bucket location.
-   - Create or select an existing execution role with the necessary permissions (AWS Glue and CloudWatch Logs).
+1. **Create IAM Role**: 
+   - Go to the AWS IAM console and create a new role.
+   - Attach the following policies to the role:
+     - `glue:GetTableVersions`
+     - `glue:BatchDeleteTableVersion`
+     - `glue:GetDatabases`
+     - `glue:GetTables`
+   - Save the role and note its ARN for later use.
 
-2. **Create EventBridge Rule**:
+2. **Deploy Lambda Function**:
+   - Go to the AWS Lambda console and create a new Lambda function.
+   - Choose "Author from scratch" and configure the function with the following settings:
+     - **Runtime**: Python 3.x
+     - **Role**: Select the IAM role created in the previous step.
+     - **Code**: Copy and paste the provided Python code into the inline editor or upload a ZIP file if preferred.
+   - Set environment variables and adjust the function settings as needed.
+
+3. **Set Up EventBridge Rule**:
    - Go to the Amazon EventBridge console.
-   - Click "Create rule."
-   - Set the schedule using a cron expression or rate expression (e.g., `rate(1 day)`).
-   - Add the Lambda function as the target.
-
-3. **Grant Lambda Permission to EventBridge**:
-   - Go to the AWS Lambda console.
-   - Select the Lambda function you created.
-   - Under the "Configuration" tab, choose "Permissions."
-   - Add a resource-based policy to allow EventBridge to invoke the function.
+   - Create a new rule with a schedule expression (e.g., `rate(7 days)`) to trigger the Lambda function.
+   - Choose "Lambda function" as the target and select the function created.
 
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-## Author
-
-[Your Name] - [Your Contact Information]
-
-## Acknowledgements
-
-- AWS Documentation
-- boto3 Python SDK
