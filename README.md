@@ -95,6 +95,24 @@ Policies:
    - Go to the Amazon EventBridge console.
    - Create a new rule with a schedule expression (e.g., `rate(7 days)`) to trigger the Lambda function.
    - Choose "Lambda function" as the target and select the function created.
+## Design and Optimization
+
+The Lambda function has been designed to be simple yet efficient, aiming to manage AWS Glue table version cleanup in a practical and cost-effective manner. The function deletes between 150,000 and 250,000 versions per execution, depending on the data volume and number of versions to remove. This approach was chosen to ensure high efficiency without the need for additional resources like DynamoDB or Glue, keeping costs low.
+
+### Advantages of the Current Implementation
+
+- **Simplicity:** The Lambda function is easy to deploy and does not require complex configurations.
+- **Cost-Efficiency:** It does not use additional resources like DynamoDB or Glue, thus reducing overall costs.
+- **Efficiency:** The current approach is highly effective for big data systems and real-time ETL, minimizing the risk of crawler blocks due to reaching service quota limits.
+
+### Improvement Opportunities
+
+Although the current implementation is very effective, there are opportunities for further enhancement:
+
+- **Recursive Lambda:** Implementing a recursive Lambda function could enable the management of all old versions more comprehensively. This solution might require more complex state and timeout management.
+- **AWS Step Functions:** Using AWS Step Functions to orchestrate the cleanup process in multiple steps could provide a more robust and scalable solution. Step Functions can handle longer and more complex executions, allowing for more thorough and continuous version cleanup.
+
+These improvements could increase the Lambda function's ability to handle even larger quantities of versions but may also introduce additional costs and complexity. However, the current version strikes an optimal balance between simplicity and performance and is suitable for most common use cases.
 
 ## License
 
